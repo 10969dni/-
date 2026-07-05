@@ -1,0 +1,6 @@
+我是剛開始玩動物森友會的人，只是想快速地看到北半球的現在月分能抓到什麼
+本來想要繼續往下做成自動更新現在時間跟現在時間能抓到甚麼的
+但我不會了...
+
+I'm a newbie to Animal Crossing and just want to quickly see what you can catch in the Northern Hemisphere at the current month.
+I originally wanted to make it automatically update the current time and what you can catch at the current time, but I've gotten stuck...
