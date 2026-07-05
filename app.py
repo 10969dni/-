@@ -175,6 +175,37 @@ def is_month_in_range(range_str, target_month):
     # 沒有逗號的單一格式
     return _check_single_month_token(range_str, target_month)
 
+# --- 時間 ---
+def _check_single_time_token(token, target_hour):
+    token = token.strip()
+    if not token:
+        return False
+ 
+    match = re.match(r"^(\d+)~(\d+)$", token)
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        if start <= end:
+            return start <= target_hour <= end
+        else:
+            return target_hour >= start or target_hour <= end
+ 
+    if token.isdigit():
+        return int(token) == target_hour
+ 
+    return False
+
+def is_time_in_range(range_str, target_hour):
+    if pd.isna(range_str) or str(range_str) in ("nan", "全天"):
+        return True
+ 
+    range_str = str(range_str).strip()
+
+    if "," in range_str:
+        tokens = range_str.split(",")
+        return any(_check_single_time_token(t, target_hour) for t in tokens)
+ 
+    return _check_single_time_token(range_str, target_hour)
+
 
 # --- 介面 ---
 st.title("🏝️ 集合啦！動物森友會 - 全生物即時圖鑑")
@@ -201,30 +232,46 @@ else:
     month_filter = st.sidebar.selectbox(
         "切換月份限定：", options=["全部"] + [f"{i}月" for i in range(1, 13)]
     )
+ 
+    # 現在時刻模式：打勾就只顯示現在時間出沒的生物，沒打勾就是全圖鑑
+    now_taiwan = datetime.now(ZoneInfo("Asia/Taipei"))
+    use_current_time = st.sidebar.checkbox("⏰ 只顯示現在時刻出沒的生物")
+    if use_current_time:
+        st.sidebar.caption(f"目前判斷時間：{now_taiwan.strftime('%H:%M')}（台灣時間）")
 
-    # --- 資料過濾計算邏輯 ---
+    
+    # ---
     filtered_df = df_all[df_all["種類"].isin(selected_types)]
-
+ 
     if search_query:
         filtered_df = filtered_df[filtered_df["名稱"].astype(str).str.contains(search_query, na=False)]
-
+ 
     if month_filter != "全部":
         target_int = int(month_filter.replace("月", ""))
         month_mask = filtered_df["出沒月份"].apply(lambda x: is_month_in_range(x, target_int))
         filtered_df = filtered_df[month_mask]
+ 
+    if use_current_time:
+        current_hour = now_taiwan.hour
+        time_mask = filtered_df["出沒時間"].apply(lambda x: is_time_in_range(x, current_hour))
+        filtered_df = filtered_df[time_mask]
 
+    
     # --- 主要內容 ---
-    st.metric("📊 目前篩選結果", f"{len(filtered_df)} 筆生物")
+    if use_current_time:
+        st.metric("📊 目前篩選結果（現在時刻模式）", f"{len(filtered_df)} 筆生物")
+    else:
+        st.metric("📊 目前篩選結果", f"{len(filtered_df)} 筆生物")
     st.markdown("---")
-
-    st.subheader("📋 生物圖鑑")
-
+ 
+    st.subheader("📋 生物圖鑑清單")
+ 
     if filtered_df.empty:
         st.warning("⚠️ 沒有符合篩選條件的生物。")
     else:
         records = filtered_df.to_dict(orient="records")
  
-        CARDS_PER_ROW = 3  # 電腦上每列 3 張卡片；手機自動變成單欄
+        CARDS_PER_ROW = 3 
         for i in range(0, len(records), CARDS_PER_ROW):
             row_items = records[i:i + CARDS_PER_ROW]
             cols = st.columns(CARDS_PER_ROW)
@@ -237,4 +284,3 @@ else:
                         st.write(f"💰 價格：{item['價格']}")
                         st.write(f"📅 月份：{item['出沒月份']}")
                         st.write(f"⏰ 時間：{item['出沒時間']}")
- 
