@@ -7,31 +7,25 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# --- 網頁基礎設定 ---
+# --- 網頁設定 ---
 st.set_page_config(page_title="動森全生物即時圖鑑", page_icon="🏝️", layout="wide")
 
-# 設定儲存 CSV 的資料夾路徑
+# 路徑
 SAVE_FOLDER = r"C:\Users\東\OneDrive\Desktop\動物森友會database"
 
-# 模擬瀏覽器標頭，防止網站防盜鏈阻擋 Streamlit 讀取圖片
+# 模擬瀏覽器標頭
 IMG_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Referer": "https://kkplay3c.net/"
 }
 
 
-# --- 智慧網址轉譯函式 ---
+# --- !!! ---
 def encode_chinese_url(url):
-    """
-    對網址的路徑(含每一段)與 query string 做安全編碼，
-    避免中文字出現在路徑中間或 query string 時無法正確編碼。
-    """
     if pd.isna(url) or not isinstance(url, str) or not url.startswith("http"):
         return url
     try:
         parsed_url = urllib.parse.urlparse(url)
-
-        # 對路徑每一段都做 quote（原本只處理最後一段）
         path_parts = parsed_url.path.split("/")
         encoded_parts = [urllib.parse.quote(p) for p in path_parts]
         new_path = "/".join(encoded_parts)
@@ -47,7 +41,7 @@ def encode_chinese_url(url):
         return url
 
 
-# --- 智慧圖片下載 ---
+# --- PIC ---
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_safe_image(url):
     try:
@@ -74,7 +68,7 @@ def render_image(url, width):
             st.image("https://placehold.co/60x60?text=No+Image", width=width)
 
 
-# --- 讀取並統一欄位資料（加上快取，並提供手動刷新按鈕） ---
+# --- 讀資料 ---
 @st.cache_data(show_spinner="正在載入資料...")
 def load_and_combine_data(_refresh_token=0):
     fish_path = os.path.join(SAVE_FOLDER, "魚類資料庫.csv")
@@ -146,19 +140,17 @@ def load_and_combine_data(_refresh_token=0):
     return combined_df
 
 
-# --- 月份判斷函式（支援單一數字、範圍、逗號分隔多月份、全年） ---
+# --- 月份判斷 ---
 def is_month_in_range(range_str, target_month):
     if pd.isna(range_str) or str(range_str) in ("nan", "全年"):
         return True
 
     range_str = str(range_str).strip()
-
-    # 支援逗號分隔多月份，例如 "3,7,8"
+    
     if "," in range_str:
         months = [m.strip() for m in range_str.split(",") if m.strip().isdigit()]
         return target_month in [int(m) for m in months]
 
-    # 支援 "start~end" 範圍（含跨年，例如 11~2）
     match = re.match(r"(\d+)~(\d+)", range_str)
     if match:
         start, end = int(match.group(1)), int(match.group(2))
@@ -167,17 +159,15 @@ def is_month_in_range(range_str, target_month):
         else:
             return target_month >= start or target_month <= end
 
-    # 單一月份數字
     if range_str.isdigit():
         return int(range_str) == target_month
 
     return True
 
 
-# --- 網頁介面呈現 ---
+# --- 介面 ---
 st.title("🏝️ 集合啦！動物森友會 - 全生物即時圖鑑")
 
-# 側邊欄：手動刷新按鈕（因為資料讀取現在有快取，CSV 更新後需要手動刷新）
 if "refresh_token" not in st.session_state:
     st.session_state.refresh_token = 0
 
