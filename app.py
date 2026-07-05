@@ -119,7 +119,7 @@ def load_and_combine_data(_refresh_token=0):
         df = None
         last_error = None
         # 依序嘗試常見編碼，避免 Excel 存成 Big5 / GBK 導致 UTF-8 讀取失敗
-        for encoding in ["utf-8", "utf-8-sig", "big5", "cp950", "gbk"]:
+        for encoding in ["utf-8", "utf-8-sig", "big5", "cp950", "gbk", "gb18030", "cp1252", "latin1"]:
             try:
                 df = pd.read_csv(path, encoding=encoding)
                 if encoding != "utf-8":
@@ -128,6 +128,24 @@ def load_and_combine_data(_refresh_token=0):
             except Exception as e:
                 last_error = e
                 continue
+
+        # 最終備援：如果所有編碼都失敗，通常代表檔案裡混雜了極少數無法辨識的特殊符號
+        # （例如從網頁複製貼上時夾帶的版權符號、特殊引號、♂♀ 符號等）。
+        # 這裡改用「忽略無法解碼的字元」強制讀取，讓資料至少能顯示，
+        # 只有那幾個特殊符號會消失或變成問號，不影響其他欄位。
+        if df is None:
+            try:
+                with open(path, "rb") as f:
+                    raw_bytes = f.read()
+                text = raw_bytes.decode("utf-8", errors="ignore")
+                from io import StringIO
+                df = pd.read_csv(StringIO(text))
+                debug_messages.append(
+                    f"⚠️ {type_label}：標準編碼皆失敗，已改用「忽略無法辨識字元」的方式強制讀取。"
+                    f"檔案中可能含有少數特殊符號（例如版權符號、特殊引號、♂♀ 等）已被移除，建議檢查原始 CSV。"
+                )
+            except Exception as e:
+                last_error = e
 
         if df is None:
             debug_messages.append(f"❌ {type_label}：所有編碼嘗試皆失敗 → {last_error}")
@@ -156,7 +174,10 @@ def load_and_combine_data(_refresh_token=0):
         return pd.DataFrame(columns=target_cols), debug_messages
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
-    combined_df["出沒月份"] = combined_df["出沒月份"].astype(str).str.replace(" ", "")
+    # 注意：只去除頭尾空白，不能把欄位內所有空格都刪掉，
+    # 因為像 "3~6 9~11" 這種用空格分隔多組月份範圍的格式，
+    # 內部空格是有意義的分隔符號，刪掉會把資料弄壞（變成 "3~69~11"）。
+    combined_df["出沒月份"] = combined_df["出沒月份"].astype(str).str.strip()
     combined_df["圖片網址"] = combined_df["圖片網址"].apply(encode_chinese_url)
     return combined_df, debug_messages
 
@@ -189,13 +210,13 @@ def is_month_in_range(range_str, target_month):
 
     range_str = str(range_str).strip()
 
-    # 支援逗號分隔多組資料，每一組可以是範圍（11~2）或單一數字（7）
-    # 例如："11~2,6~9" 或 "3,7,8" 或 "11~2,7"
-    if "," in range_str:
-        tokens = range_str.split(",")
+    # 支援逗號「或」空格分隔多組資料，每一組可以是範圍（11~2）或單一數字（7）
+    # 例如："11~2,6~9"、"3~6 9~11"、"3,7,8" 皆可
+    tokens = re.split(r"[,\s]+", range_str)
+    if len(tokens) > 1:
         return any(_check_single_month_token(t, target_month) for t in tokens)
 
-    # 沒有逗號的單一格式
+    # 只有單一格式
     return _check_single_month_token(range_str, target_month)
 
 
@@ -227,9 +248,9 @@ def is_time_in_range(range_str, target_hour):
 
     range_str = str(range_str).strip()
 
-    # 支援逗號分隔多組時段，例如 "16~21,4~9"
-    if "," in range_str:
-        tokens = range_str.split(",")
+    # 支援逗號「或」空格分隔多組時段，例如 "16~21,4~9" 或 "16~21 4~9"
+    tokens = re.split(r"[,\s]+", range_str)
+    if len(tokens) > 1:
         return any(_check_single_time_token(t, target_hour) for t in tokens)
 
     return _check_single_time_token(range_str, target_hour)
