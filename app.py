@@ -94,9 +94,9 @@ def load_and_combine_data(_refresh_token=0):
     sea_path = os.path.join(SAVE_FOLDER, "海洋生物資料庫.csv")
 
     all_dfs = []
-    # 新增「影子大小」欄位（只有海產資料庫會有，魚類/昆蟲會自動補預設值）
+
     target_cols = ["種類", "圖片網址", "名稱", "出沒月份", "出沒時間", "價格", "影子大小"]
-    debug_messages = []  # 收集讀取過程中的錯誤，方便排查問題
+    debug_messages = []  
 
     def sanitize_and_align_df(df, type_label, rename_dict, default_values):
         possible_img_cols = ["圖片", "生物圖片", "Image", "img", "image_url"]
@@ -158,7 +158,6 @@ def load_and_combine_data(_refresh_token=0):
             debug_messages.append(f"❌ {type_label}：欄位整理失敗 → {e}（實際欄位：{list(df.columns)}）")
             return None
 
-    # 魚類、昆蟲沒有「影子大小」概念，補上 "-" 當預設值，避免卡片顯示「無資料」
     df_fish = try_load_csv(fish_path, "魚類", {"魚種": "名稱", "售價": "價格"}, {"影子大小": "-"})
     if df_fish is not None:
         all_dfs.append(df_fish)
@@ -167,7 +166,6 @@ def load_and_combine_data(_refresh_token=0):
     if df_insect is not None:
         all_dfs.append(df_insect)
 
-    # 海洋生物 CSV 欄位：海洋生物、影子大小、出沒月份、出沒時間、售價、圖片網址
     df_sea = try_load_csv(sea_path, "海產", {"海洋生物": "名稱", "售價": "價格"}, {"出沒時間": "全天"})
     if df_sea is not None:
         all_dfs.append(df_sea)
@@ -282,21 +280,13 @@ else:
         "切換月份限定：", options=["全部"] + [f"{i}月" for i in range(1, 13)]
     )
 
-    # 只有選到「海產」時才顯示影子大小篩選器
-    shadow_filter = "全部"
-    if "海產" in selected_types:
-        shadow_options = ["全部"] + sorted(
-            [s for s in df_all.loc[df_all["種類"] == "海產", "影子大小"].dropna().unique().tolist() if s not in ("無資料", "-")]
-        )
-        shadow_filter = st.sidebar.selectbox("🌑 影子大小（僅限海產）：", options=shadow_options)
-
-    # 現在時刻模式：打勾就只顯示現在時間出沒的生物，沒打勾就是全圖鑑
+    # 現在時刻模式：
     now_taiwan = datetime.now(ZoneInfo("Asia/Taipei"))
     use_current_time = st.sidebar.checkbox("⏰ 只顯示現在時刻出沒的生物")
     if use_current_time:
         st.sidebar.caption(f"目前判斷時間：{now_taiwan.strftime('%H:%M')}（台灣時間）")
 
-    # --- 資料過濾計算邏輯 ---
+    # ------
     filtered_df = df_all[df_all["種類"].isin(selected_types)]
 
     if search_query:
@@ -306,9 +296,6 @@ else:
         target_int = int(month_filter.replace("月", ""))
         month_mask = filtered_df["出沒月份"].apply(lambda x: is_month_in_range(x, target_int))
         filtered_df = filtered_df[month_mask]
-
-    if shadow_filter != "全部":
-        filtered_df = filtered_df[filtered_df["影子大小"] == shadow_filter]
 
     if use_current_time:
         current_hour = now_taiwan.hour
