@@ -9,39 +9,37 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# --- 網頁基礎設定 ---
+# ------
 st.set_page_config(page_title="動森全生物即時圖鑑", page_icon="🏝️", layout="wide")
-
-# 設定儲存 CSV 的資料夾路徑
-# 使用相對路徑，讓程式不論在本機或部署到 Streamlit Cloud 都能正確找到資料
-# CSV 檔案需放在與本程式同一層的 "data" 資料夾內
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_FOLDER = os.path.join(BASE_DIR, "data")
 
-# 模擬瀏覽器標頭，防止網站防盜鏈阻擋 Streamlit 讀取圖片
 IMG_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Referer": "https://kkplay3c.net/"
 }
 
 
-# --- 智慧網址轉譯函式 ---
+# ------
 def encode_chinese_url(url):
     """
     對網址的路徑(含每一段)與 query string 做安全編碼，
     避免中文字出現在路徑中間或 query string 時無法正確編碼。
+
+    重要：先 unquote（解碼）再 quote（編碼），確保不管原始網址
+    是「還沒編碼的原始中文」還是「已經編碼過的 %E7%99%BD...」，
+    最後都只會被編碼「一次」，不會因為重複編碼（例如 % 變成 %25）
+    而把網址弄壞。
     """
     if pd.isna(url) or not isinstance(url, str) or not url.startswith("http"):
         return url
     try:
         parsed_url = urllib.parse.urlparse(url)
 
-        # 對路徑每一段都做 quote（原本只處理最後一段）
         path_parts = parsed_url.path.split("/")
-        encoded_parts = [urllib.parse.quote(p) for p in path_parts]
+        encoded_parts = [urllib.parse.quote(urllib.parse.unquote(p)) for p in path_parts]
         new_path = "/".join(encoded_parts)
 
-        # 對 query string 做編碼（保留 key=value 結構）
         if parsed_url.query:
             query_pairs = urllib.parse.parse_qsl(parsed_url.query, keep_blank_values=True)
             new_query = urllib.parse.urlencode(query_pairs)
@@ -53,20 +51,19 @@ def encode_chinese_url(url):
         return url
 
 
-# --- 智慧圖片下載器（破解防盜鏈，加上快取避免重複下載） ---
+# --- PIC ---
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_safe_image(url):
     try:
         response = requests.get(url, headers=IMG_HEADERS, timeout=5)
         if response.status_code == 200:
-            # 快取的是圖片的 bytes，避免快取 PIL Image 物件造成的潛在問題
             return response.content
     except Exception:
         pass
     return None
 
 
-# --- Markdown 特殊符號跳脫（避免 ~ 等符號被誤判成刪除線等 Markdown 語法） ---
+# ------
 def escape_markdown(text):
     text = str(text)
     for ch in ["\\", "`", "*", "_", "~", "#"]:
@@ -75,7 +72,6 @@ def escape_markdown(text):
 
 
 def render_image(url, width):
-    """統一處理圖片顯示邏輯，找不到圖時顯示預設圖"""
     if pd.isna(url) or not str(url).startswith("http"):
         st.image("https://placehold.co/60x60?text=No+Img", width=width)
         return
@@ -90,7 +86,7 @@ def render_image(url, width):
             st.image("https://placehold.co/60x60?text=No+Image", width=width)
 
 
-# --- 讀取並統一欄位資料（加上快取，並提供手動刷新按鈕） ---
+# --- 讀取 ---
 @st.cache_data(show_spinner="正在載入資料...")
 def load_and_combine_data(_refresh_token=0):
     fish_path = os.path.join(SAVE_FOLDER, "魚類資料庫.csv")
@@ -126,7 +122,6 @@ def load_and_combine_data(_refresh_token=0):
 
         df = None
         last_error = None
-        # 依序嘗試常見編碼，避免 Excel 存成 Big5 / GBK 導致 UTF-8 讀取失敗
         for encoding in ["utf-8", "utf-8-sig", "big5", "cp950", "gbk", "gb18030", "cp1252", "latin1"]:
             try:
                 df = pd.read_csv(path, encoding=encoding)
@@ -137,10 +132,6 @@ def load_and_combine_data(_refresh_token=0):
                 last_error = e
                 continue
 
-        # 最終備援：如果所有編碼都失敗，通常代表檔案裡混雜了極少數無法辨識的特殊符號
-        # （例如從網頁複製貼上時夾帶的版權符號、特殊引號、♂♀ 符號等）。
-        # 這裡改用「忽略無法解碼的字元」強制讀取，讓資料至少能顯示，
-        # 只有那幾個特殊符號會消失或變成問號，不影響其他欄位。
         if df is None:
             try:
                 with open(path, "rb") as f:
@@ -182,15 +173,12 @@ def load_and_combine_data(_refresh_token=0):
         return pd.DataFrame(columns=target_cols), debug_messages
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
-    # 注意：只去除頭尾空白，不能把欄位內所有空格都刪掉，
-    # 因為像 "3~6 9~11" 這種用空格分隔多組月份範圍的格式，
-    # 內部空格是有意義的分隔符號，刪掉會把資料弄壞（變成 "3~69~11"）。
     combined_df["出沒月份"] = combined_df["出沒月份"].astype(str).str.strip()
     combined_df["圖片網址"] = combined_df["圖片網址"].apply(encode_chinese_url)
     return combined_df, debug_messages
 
 
-# --- 月份判斷函式（支援單一數字、範圍、逗號分隔的多組範圍/數字混合、全年） ---
+# --- 月份 ---
 def _check_single_month_token(token, target_month):
     """判斷單一個 token（可能是 '11~2' 這種範圍，也可能是 '7' 這種單一數字）"""
     token = token.strip()
@@ -203,7 +191,6 @@ def _check_single_month_token(token, target_month):
         if start <= end:
             return start <= target_month <= end
         else:
-            # 跨年範圍，例如 11~2 代表 11,12,1,2 月
             return target_month >= start or target_month <= end
 
     if token.isdigit():
@@ -218,17 +205,14 @@ def is_month_in_range(range_str, target_month):
 
     range_str = str(range_str).strip()
 
-    # 支援逗號「或」空格分隔多組資料，每一組可以是範圍（11~2）或單一數字（7）
-    # 例如："11~2,6~9"、"3~6 9~11"、"3,7,8" 皆可
     tokens = re.split(r"[,\s]+", range_str)
     if len(tokens) > 1:
         return any(_check_single_month_token(t, target_month) for t in tokens)
 
-    # 只有單一格式
     return _check_single_month_token(range_str, target_month)
 
 
-# --- 時間判斷函式（支援單一時段、跨凌晨範圍、逗號分隔多組時段、全天） ---
+# --- 時間 ---
 def _check_single_time_token(token, target_hour):
     """判斷單一個 token（可能是 '16~21' 這種時段，也可能是 '9' 這種單一整點）"""
     token = token.strip()
@@ -241,7 +225,6 @@ def _check_single_time_token(token, target_hour):
         if start <= end:
             return start <= target_hour <= end
         else:
-            # 跨凌晨範圍，例如 21~4 代表 21,22,23,0,1,2,3,4 點
             return target_hour >= start or target_hour <= end
 
     if token.isdigit():
@@ -256,7 +239,6 @@ def is_time_in_range(range_str, target_hour):
 
     range_str = str(range_str).strip()
 
-    # 支援逗號「或」空格分隔多組時段，例如 "16~21,4~9" 或 "16~21 4~9"
     tokens = re.split(r"[,\s]+", range_str)
     if len(tokens) > 1:
         return any(_check_single_time_token(t, target_hour) for t in tokens)
@@ -264,10 +246,10 @@ def is_time_in_range(range_str, target_hour):
     return _check_single_time_token(range_str, target_hour)
 
 
-# --- 網頁介面呈現 ---
-st.title("🏝️ 集合啦！動物森友會 - 全生物即時圖鑑")
+# --- 網頁介面 ---
+st.title("🏝️ 集合啦！動物森友會-全生物即時圖鑑")
 
-# 側邊欄：手動刷新按鈕（因為資料讀取現在有快取，CSV 更新後需要手動刷新）
+# 側邊欄：
 if "refresh_token" not in st.session_state:
     st.session_state.refresh_token = 0
 
@@ -277,7 +259,7 @@ if st.sidebar.button("🔄 重新載入 CSV 資料"):
 
 df_all, debug_messages = load_and_combine_data(st.session_state.refresh_token)
 
-# 顯示讀取過程中的錯誤/警告訊息（例如某個 CSV 讀取失敗、編碼問題、欄位對不上等）
+# BUGG
 if debug_messages:
     with st.expander("⚠️ 資料讀取診斷訊息（點我展開）", expanded=True):
         for msg in debug_messages:
@@ -331,8 +313,6 @@ else:
     if filtered_df.empty:
         st.warning("⚠️ 沒有符合篩選條件的生物。")
     else:
-        # 改用卡片式版面：電腦螢幕會排成多欄，手機（窄螢幕）
-        # Streamlit 會自動把欄位改成單欄垂直堆疊，資訊完整不會被擠壓。
         records = filtered_df.to_dict(orient="records")
 
         CARDS_PER_ROW = 3  # 電腦上每列 3 張卡片；手機自動變成單欄
