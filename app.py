@@ -11,7 +11,8 @@ from io import BytesIO
 st.set_page_config(page_title="動森全生物即時圖鑑", page_icon="🏝️", layout="wide")
 
 # 路徑
-SAVE_FOLDER = r"C:\Users\東\OneDrive\Desktop\動物森友會database"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_FOLDER = os.path.join(BASE_DIR, "data")
 
 # 模擬瀏覽器標頭
 IMG_HEADERS = {
