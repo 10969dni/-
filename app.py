@@ -212,31 +212,19 @@ else:
     if filtered_df.empty:
         st.warning("⚠️ 沒有符合篩選條件的生物。")
     else:
-        # 表頭
-        header_cols = st.columns([1, 1.5, 2, 2, 2, 2])
-        header_cols[0].markdown("**圖片**")
-        header_cols[1].markdown("**種類**")
-        header_cols[2].markdown("**名稱**")
-        header_cols[3].markdown("**鈴錢**")
-        header_cols[4].markdown("**出沒月份**")
-        header_cols[5].markdown("**出沒時間**")
-        #st.markdown("---")
-
-        # 條列式迴圈輸出每一列生物
         records = filtered_df.to_dict(orient="records")
-        for item in records:
-            row_cols = st.columns([1, 1.5, 2, 2, 2, 2])
-
-            # 欄位 0：圖片
-            with row_cols[0]:
-                render_image(item["圖片網址"], width=60)
-
-            # 欄位 1~5：文字資料
-            row_cols[1].write(f" {item['種類']}")
-            row_cols[2].markdown(f"**{item['名稱']}**")
-            row_cols[3].write(f" {item['價格']}")
-            row_cols[4].write(f" {item['出沒月份']}")
-            row_cols[5].write(f" {item['出沒時間']}")
-
-            # 每一列中間加一條淡淡的分割線（修正：unsafe_allow_html）
-            st.markdown("<hr style='margin:4px 0px; opacity:0.3;'>", unsafe_allow_html=True)
+ 
+        CARDS_PER_ROW = 3  # 電腦上每列 3 張卡片；手機自動變成單欄
+        for i in range(0, len(records), CARDS_PER_ROW):
+            row_items = records[i:i + CARDS_PER_ROW]
+            cols = st.columns(CARDS_PER_ROW)
+            for col, item in zip(cols, row_items):
+                with col:
+                    with st.container(border=True):
+                        render_image(item["圖片網址"], width=100)
+                        st.markdown(f"**{item['名稱']}**")
+                        st.caption(f"🏷️ {item['種類']}")
+                        st.write(f"💰 價格：{item['價格']}")
+                        st.write(f"📅 月份：{item['出沒月份']}")
+                        st.write(f"⏰ 時間：{item['出沒時間']}")
+ 
