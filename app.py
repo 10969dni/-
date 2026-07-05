@@ -66,6 +66,14 @@ def get_safe_image(url):
     return None
 
 
+# --- Markdown 特殊符號跳脫（避免 ~ 等符號被誤判成刪除線等 Markdown 語法） ---
+def escape_markdown(text):
+    text = str(text)
+    for ch in ["\\", "`", "*", "_", "~", "#"]:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 def render_image(url, width):
     """統一處理圖片顯示邏輯，找不到圖時顯示預設圖"""
     if pd.isna(url) or not str(url).startswith("http"):
@@ -335,8 +343,8 @@ else:
                 with col:
                     with st.container(border=True):
                         render_image(item["圖片網址"], width=100)
-                        st.markdown(f"**{item['名稱']}**")
+                        st.markdown(f"**{escape_markdown(item['名稱'])}**")
                         st.caption(f"🏷️ {item['種類']}")
-                        st.write(f"💰 價格：{item['價格']}")
-                        st.write(f"📅 月份：{item['出沒月份']}")
-                        st.write(f"⏰ 時間：{item['出沒時間']}")
+                        st.write(f"💰 價格：{escape_markdown(item['價格'])}")
+                        st.write(f"📅 月份：{escape_markdown(item['出沒月份'])}")
+                        st.write(f"⏰ 時間：{escape_markdown(item['出沒時間'])}")
