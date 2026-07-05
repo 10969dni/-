@@ -142,28 +142,38 @@ def load_and_combine_data(_refresh_token=0):
 
 
 # --- 月份判斷 ---
-def is_month_in_range(range_str, target_month):
-    if pd.isna(range_str) or str(range_str) in ("nan", "全年"):
-        return True
-
-    range_str = str(range_str).strip()
-    
-    if "," in range_str:
-        months = [m.strip() for m in range_str.split(",") if m.strip().isdigit()]
-        return target_month in [int(m) for m in months]
-
-    match = re.match(r"(\d+)~(\d+)", range_str)
+def _check_single_month_token(token, target_month):
+    token = token.strip()
+    if not token:
+        return False
+ 
+    match = re.match(r"^(\d+)~(\d+)$", token)
     if match:
         start, end = int(match.group(1)), int(match.group(2))
         if start <= end:
             return start <= target_month <= end
         else:
+            # 跨年範圍，例如 11~2 代表 11,12,1,2 月
             return target_month >= start or target_month <= end
-
-    if range_str.isdigit():
-        return int(range_str) == target_month
-
-    return True
+ 
+    if token.isdigit():
+        return int(token) == target_month
+ 
+    return False
+ 
+ 
+def is_month_in_range(range_str, target_month):
+    if pd.isna(range_str) or str(range_str) in ("nan", "全年"):
+        return True
+ 
+    range_str = str(range_str).strip()
+ 
+    if "," in range_str:
+        tokens = range_str.split(",")
+        return any(_check_single_month_token(t, target_month) for t in tokens)
+ 
+    # 沒有逗號的單一格式
+    return _check_single_month_token(range_str, target_month)
 
 
 # --- 介面 ---
