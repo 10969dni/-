@@ -77,19 +77,20 @@ def load_and_combine_data(_refresh_token=0):
     fish_path = os.path.join(SAVE_FOLDER, "魚類資料庫.csv")
     insect_path = os.path.join(SAVE_FOLDER, "昆蟲資料庫.csv")
     sea_path = os.path.join(SAVE_FOLDER, "海洋生物資料庫.csv")
-
+ 
     all_dfs = []
     target_cols = ["種類", "圖片網址", "名稱", "出沒月份", "出沒時間", "價格"]
-
+    debug_messages = []  # 收集讀取過程中的錯誤，方便排查問題
+ 
     def sanitize_and_align_df(df, type_label, rename_dict, default_values):
         possible_img_cols = ["圖片", "生物圖片", "Image", "img", "image_url"]
         for c in possible_img_cols:
             if c in df.columns and "圖片網址" not in rename_dict:
                 rename_dict[c] = "圖片網址"
-
+ 
         df = df.rename(columns=rename_dict)
         df["種類"] = type_label
-
+ 
         for col, val in default_values.items():
             if col not in df.columns:
                 df[col] = val
@@ -97,50 +98,56 @@ def load_and_combine_data(_refresh_token=0):
             if col not in df.columns:
                 df[col] = "無資料"
         return df[target_cols]
-
-    if os.path.exists(fish_path):
+ 
+    def try_load_csv(path, type_label, rename_dict, default_values):
+        """嘗試讀取 CSV，若失敗會記錄詳細錯誤原因（含常見編碼備援）"""
+        if not os.path.exists(path):
+            debug_messages.append(f"❌ {type_label}：找不到檔案 → {path}")
+            return None
+ 
+        df = None
+        last_error = None
+        # 依序嘗試常見編碼，避免 Excel 存成 Big5 / GBK 導致 UTF-8 讀取失敗
+        for encoding in ["utf-8", "utf-8-sig", "big5", "cp950", "gbk"]:
+            try:
+                df = pd.read_csv(path, encoding=encoding)
+                if encoding != "utf-8":
+                    debug_messages.append(f"⚠️ {type_label}：使用 {encoding} 編碼成功讀取（原本 UTF-8 讀取失敗）")
+                break
+            except Exception as e:
+                last_error = e
+                continue
+ 
+        if df is None:
+            debug_messages.append(f"❌ {type_label}：所有編碼嘗試皆失敗 → {last_error}")
+            return None
+ 
         try:
-            df_fish = pd.read_csv(fish_path)
-            df_fish = sanitize_and_align_df(
-                df=df_fish, type_label="魚類",
-                rename_dict={"魚種": "名稱", "售價": "價格"},
-                default_values={}
-            )
-            all_dfs.append(df_fish)
-        except Exception:
-            pass
-
-    if os.path.exists(insect_path):
-        try:
-            df_insect = pd.read_csv(insect_path)
-            df_insect = sanitize_and_align_df(
-                df=df_insect, type_label="昆蟲",
-                rename_dict={"昆蟲生物": "名稱", "出沒月份(月)": "出沒月份", "售價": "價格"},
-                default_values={"出沒時間": "全天"}
-            )
-            all_dfs.append(df_insect)
-        except Exception:
-            pass
-
-    if os.path.exists(sea_path):
-        try:
-            df_sea = pd.read_csv(sea_path)
-            df_sea = sanitize_and_align_df(
-                df=df_sea, type_label="海產",
-                rename_dict={"海洋生物": "名稱", "售價": "價格"},
-                default_values={"出沒時間": "全天"}
-            )
-            all_dfs.append(df_sea)
-        except Exception:
-            pass
-
+            df = sanitize_and_align_df(df=df, type_label=type_label, rename_dict=rename_dict, default_values=default_values)
+            return df
+        except Exception as e:
+            debug_messages.append(f"❌ {type_label}：欄位整理失敗 → {e}（實際欄位：{list(df.columns)}）")
+            return None
+ 
+    df_fish = try_load_csv(fish_path, "魚類", {"魚種": "名稱", "售價": "價格"}, {})
+    if df_fish is not None:
+        all_dfs.append(df_fish)
+ 
+    df_insect = try_load_csv(insect_path, "昆蟲", {"昆蟲生物": "名稱", "出沒月份(月)": "出沒月份", "售價": "價格"}, {"出沒時間": "全天"})
+    if df_insect is not None:
+        all_dfs.append(df_insect)
+ 
+    df_sea = try_load_csv(sea_path, "海產", {"海洋生物": "名稱", "售價": "價格"}, {"出沒時間": "全天"})
+    if df_sea is not None:
+        all_dfs.append(df_sea)
+ 
     if not all_dfs:
-        return pd.DataFrame(columns=target_cols)
-
+        return pd.DataFrame(columns=target_cols), debug_messages
+ 
     combined_df = pd.concat(all_dfs, ignore_index=True)
     combined_df["出沒月份"] = combined_df["出沒月份"].astype(str).str.replace(" ", "")
     combined_df["圖片網址"] = combined_df["圖片網址"].apply(encode_chinese_url)
-    return combined_df
+    return combined_df, debug_messages
 
 
 # --- 月份判斷 ---
